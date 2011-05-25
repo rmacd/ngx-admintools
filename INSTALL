@@ -1,0 +1,38 @@
+nginx ngensite
+
+This script must be chmod+x'd and put into a directory in your PATH
+
+The script assumes that your site configurations are found under your
+nginx site root, following the basic structure below:
+
+/etc/nginx
+|
+|-- sites-available/
+|   |-- example.com
+|   |-- test.example.com
+|   `-- default
+|-- sites-enabled/
+`-- nginx.conf
+
+Then, the script must be symlinked via ngdissite so as to be able 
+to disable (that almost rhymes) the hosts.
+
+Once installed and running, the ngensite tool will create symlinks in 
+the 'enabled' directory, pointing towards those in the 'available'.
+
+This could for example be done as follows
+
+	chmod +x ./ngensite
+	cp ./ngensite /usr/sbin/ngensite
+	ln -s /usr/sbin/ngensite /usr/sbin/ngdissite
+
+USAGE
+
+ngensite example.com
+
+ngensite will attempt to set up a symlink from
+sites-available/example.com to sites-enabled/example.com
+
+Failure to find the file(s) in correct location, or permission errors,
+will result in failure. 
+

@@ -1,0 +1,262 @@
+#!/usr/bin/perl -w
+#
+# ngensite by Ronald MacDonald <ronald@rmacd.com>
+# Based on a2enmod by Stefan Fritsch <sf@debian.org>
+# Licensed under Apache License 2.0
+
+use strict;
+use Cwd 'realpath';
+use File::Spec;
+use File::Basename;
+use Getopt::Long;
+
+my $quiet;
+my $force;
+Getopt::Long::Configure('bundling');
+GetOptions(
+    'quiet|q' => \$quiet,
+    'force|f' => \$force
+) or exit 2;
+
+# This assumes that the file is called 'ngensite', with a symlink pointing 
+# from 'ngdissite'
+my $basename = basename($0);
+$basename =~ /^ng(en|dis)site((?:-.+)?)$/
+    or die "$basename call name unknown\n";
+my $act        = $1;
+my $dir_suffix = $2;
+
+$act .= 'able';
+my ( $dir, $sffx, $reload );
+
+$dir    = 'sites';
+$sffx   = '';
+$reload = 'reload';
+
+my $confdir  = $ENV{NGINX_CONFDIR}                  || "/etc/nginx$dir_suffix";
+my $availdir = $ENV{ uc("NGINX_${dir}_AVAILABLE") } || "$confdir/$dir-available";
+my $enabldir = $ENV{ uc("NGINX_${dir}_ENABLED") } || "$confdir/$dir-enabled";
+
+my $choicedir = $act eq 'enable' ? $availdir : $enabldir;
+my $linkdir = File::Spec->abs2rel( $availdir, $enabldir );
+
+my $request_reload = 0;
+
+my $rc = 0;
+
+if ( !scalar @ARGV ) {
+    my @choices = myglob('*');
+    print "Your choices are: @choices\n";
+    print "Which site(s) do you want to $act (wildcards ok)?\n";
+    my $input = <>;
+    @ARGV = split /\s+/, $input;
+
+}
+
+my @objs;
+foreach my $arg (@ARGV) {
+    my @glob = myglob($arg);
+    if ( !@glob ) {
+        error("No site found matching $arg!\n");
+        $rc = 1;
+    }
+    else {
+        push @objs, @glob;
+    }
+}
+
+foreach my $acton (@objs) {
+    doit($acton) or $rc = 1;
+}
+
+info("Run '/etc/init.d/nginx $reload' to activate new configuration!\n")
+    if $request_reload;
+
+exit($rc);
+
+##############################################################################
+
+sub myglob {
+    my $arg = shift;
+
+    my @glob = map {
+        s{^$choicedir/}{};
+        s{$sffx$}{};
+        s{^000-default$}{default};
+        $_
+    } glob("$choicedir/$arg$sffx");
+
+    # use same rules as apache's Include directive
+    @glob = grep( /^[A-Za-z0-9][-.\w]*$/, @glob );
+    @glob = grep( !/\.dpkg/, @glob );
+
+    return @glob;
+}
+
+sub doit {
+    my $acton = shift;
+
+    my $prio = "";
+    if ( $acton eq 'default' ) {
+        $prio = '000-';
+    }
+
+    my ( $conftgt, $conflink );
+
+    my $tgt  = "$availdir/$acton$sffx";
+    my $link = "$enabldir/$prio$acton$sffx";
+
+    if ( !-e $tgt ) {
+        if ( -l $link && !-e $link ) {
+		if ( $act eq 'disable' ) {
+			info("removing dangling symlink $link\n");
+			unlink($link);
+			return 1;
+		}
+		else {
+			error("$link is a dangling symlink!\n");
+		}
+	}
+
+        error("site $acton does not exist!\n");
+        return 0;
+    }
+
+    if ( $act eq 'enable' ) {
+        my $check = check_link( $tgt, $link );
+        if ( $check eq 'ok' ) {
+            if ($conflink) {
+
+                # handle .conf file
+                my $confcheck = check_link( $conftgt, $conflink );
+                if ( $confcheck eq 'ok' ) {
+                    info("site $acton already enabled\n");
+                    return 1;
+                }
+                elsif ( $confcheck eq 'missing' ) {
+                    print "Enabling config file $acton.conf.\n";
+                    add_link( $conftgt, $conflink ) or return 0;
+                }
+                else {
+                    error("Config file $acton.conf not properly enabled: $confcheck\n");
+                    return 0;
+                }
+            }
+            else {
+                info("site $acton already enabled\n");
+                return 1;
+            }
+        }
+        elsif ( $check eq 'missing' ) {
+            if ($conflink) {
+
+                # handle .conf file
+                my $confcheck = check_link( $conftgt, $conflink );
+                if ( $confcheck eq 'missing' ) {
+                    add_link( $conftgt, $conflink ) or return 0;
+                }
+                elsif ( $confcheck ne 'ok' ) {
+                    error("Config file $acton.conf not properly enabled: $confcheck\n");
+                    return 0;
+                }
+            }
+
+            print "Enabling site $acton.\n";
+            return add_link( $tgt, $link );
+        }
+        else {
+            error("site $acton not properly enabled: $check\n");
+            return 0;
+        }
+    }
+    else {
+        if ( -e $link || -l $link ) {
+            remove_link($link);
+            if ( $conflink && -e $conflink ) {
+                remove_link($conflink);
+            }
+            print "site $acton disabled.\n";
+        }
+        elsif ( $conflink && -e $conflink ) {
+            print "Disabling stale config file $acton.conf.\n";
+            remove_link($conflink);
+        }
+        else {
+            info("site $acton already disabled\n");
+            return 1;
+        }
+    }
+
+    return 1;
+}
+
+sub add_link {
+    my ( $tgt, $link ) = @_;
+
+    # create relative link
+    if ( !symlink( File::Spec->abs2rel( $tgt, dirname($link) ), $link ) ) {
+        die("Could not create $link: $!\n");
+    }
+    $request_reload = 1;
+    return 1;
+}
+
+sub check_link {
+    my ( $tgt, $link ) = @_;
+
+    if ( !-e $link ) {
+        if ( -l $link ) {
+
+            # points to nowhere
+            info("Removing dangling link $link");
+            unlink($link) or die "Could not remove $link\n";
+        }
+        return 'missing';
+    }
+
+    if ( -e $link && !-l $link ) {
+        return "$link is a real file, not touching it";
+    }
+    if ( realpath($link) ne realpath($tgt) ) {
+        return "$link exists but does not point to $tgt, not touching it";
+    }
+    return 'ok';
+}
+
+sub remove_link {
+    my ($link) = @_;
+
+    if ( -l $link ) {
+        unlink($link) or die "Could not remove $link: $!\n";
+    }
+    elsif ( -e $link ) {
+        error("$link is not a symbolic link, not deleting\n");
+        return 0;
+    }
+    $request_reload = 1;
+    return 1;
+}
+
+sub info {
+    print @_ if !$quiet;
+}
+
+sub error {
+    print STDERR 'ERROR: ', @_;
+}
+
+sub read_env_file {
+    my $file = shift;
+
+    -r $file or return;
+    my @lines = qx{env - sh -c '. $file && env'};
+    if ($?) {
+        die "Could not read $file\n";
+    }
+
+    foreach my $l (@lines) {
+        chomp $l;
+        $l =~ /^(.*)?=(.*)$/ or die "Could not parse $file\n";
+        $ENV{$1} = $2;
+    }
+}
