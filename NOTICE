@@ -1,0 +1,5 @@
+nginx admin tools
+Copyright (c) Ronald MacDonald, 2011 <ronald@rmacd.com>
+
+Based on Stefan Fritsch's 'a2enmod' <sf@debian.org>
+Licensed under Apache License 2.0
