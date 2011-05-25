@@ -1,4 +1,22 @@
-nginx ngensite
+
+INSTALL :: INSTRUCTIONS
+
+The following instructions covers each admin tool in this codebase.
+Maybe once there are a fair few tools here, I'll consider splitting up
+the base and/or the INSTALL/README files.
+
+NGINX INIT.D #########################################################
+
+Install the script to your init.d folder and chmod+x as usual
+
+	cp ./nginx-initd /etc/init.d/nginx
+	chmod +x /etc/init.d/nginx
+
+USAGE
+
+	/etc/init.d/nginx {start|stop|restart|reload}
+
+NGENSITE #############################################################
 
 This script must be chmod+x'd and put into a directory in your PATH
 

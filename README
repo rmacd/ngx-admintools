@@ -2,3 +2,10 @@ The nginx administration tools are intended to be used to supplement
 the tools already available on the Debian source archives so as to
 make administration of nginx less troublesome.
 
+CONTENTS
+
+nginx-initd
+-- init.d script for Debian, to ease shutdown/startup of nginx
+
+ngensite
+-- Based on the a2ensite script, so as to make host admin easier

@@ -1,5 +1,9 @@
 nginx admin tools
 Copyright (c) Ronald MacDonald, 2011 <ronald@rmacd.com>
 
+ngensite
 Based on Stefan Fritsch's 'a2enmod' <sf@debian.org>
 Licensed under Apache License 2.0
+
+nginx-initd
+Based on the skeleton Debian init.d scripts
